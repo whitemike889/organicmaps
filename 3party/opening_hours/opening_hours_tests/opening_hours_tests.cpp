@@ -872,9 +872,10 @@ BOOST_AUTO_TEST_CASE(OpeningHoursMonthdayRanges_TestParseUnparse)
 BOOST_AUTO_TEST_CASE(OpeningHoursYearRanges_TestParseUnparse)
 {
   {
+    // https://github.com/mapsme/omim/commit/ebe26a41da0744b3bc81d6b213406361f14d39b2
     auto const rule = "1995";
     auto const parsedUnparsed = ParseAndUnparse<osmoh::TYearRanges>(rule);
-    BOOST_CHECK_EQUAL(parsedUnparsed, rule);
+    BOOST_CHECK_NE(parsedUnparsed, rule);
   }
   {
     auto const rule = "1997+";
@@ -1270,9 +1271,11 @@ BOOST_AUTO_TEST_CASE(OpeningHours_TestIsActive)
     BOOST_CHECK(!IsActive(ranges[0], time));
   }
   {
+    // https://github.com/mapsme/omim/commit/ebe26a41da0744b3bc81d6b213406361f14d39b2
     TYearRanges ranges;
-    BOOST_CHECK(Parse("2011", ranges));
+    BOOST_CHECK(!Parse("2011", ranges));
 
+    /*
     std::tm time;
     auto const fmt = "%Y";
     BOOST_CHECK(GetTimeTuple("2011", fmt, time));
@@ -1280,6 +1283,7 @@ BOOST_AUTO_TEST_CASE(OpeningHours_TestIsActive)
 
     BOOST_CHECK(GetTimeTuple("2012", fmt, time));
     BOOST_CHECK(!IsActive(ranges[0], time));
+    */
   }
   /// See https://en.wikipedia.org/wiki/ISO_week_date#First_week
   {

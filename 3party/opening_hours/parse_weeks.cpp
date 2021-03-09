@@ -17,12 +17,15 @@ namespace osmoh
       using qi::_val;
       using osmoh::WeekRange;
 
-      week = (weeknum >> dash >> weeknum >> '/' >> uint_) [bind(&WeekRange::SetStart, _val, _1),
-                                                           bind(&WeekRange::SetEnd, _val, _2),
-                                                           bind(&WeekRange::SetPeriod, _val, _3)]
-      | (weeknum >> dash >> weeknum) [bind(&WeekRange::SetStart, _val, _1),
-                                      bind(&WeekRange::SetEnd, _val, _2)]
-      | weeknum                      [bind(&WeekRange::SetStart, _val, _1)]
+      week =
+          weeknum [bind(&WeekRange::SetStart, _val, _1)] >> dash >>
+          weeknum [bind(&WeekRange::SetEnd, _val, _1)] >> '/' >>
+          uint_ [bind(&WeekRange::SetPeriod, _val, _1)]
+      |
+          weeknum [bind(&WeekRange::SetStart, _val, _1)] >> dash >>
+          weeknum [bind(&WeekRange::SetEnd, _val, _1)]
+      |
+          weeknum [bind(&WeekRange::SetStart, _val, _1)]
       ;
 
       main %= charset::no_case[lit("week")] >> (week % ',');
