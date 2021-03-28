@@ -1,10 +1,27 @@
-name: Check
+name: Android Check
 on:
   pull_request:
+    paths-ignore:
+    - .github/workflows/linux*
+    - .github/workflows/ios*
+    - '**/*_tests/**'
+    - CONTRIBUTORS
+    - LICENSE
+    - NOTICE
+    - README.md
+    - docs/**
+    - generator/**
+    - iphone/**
+    - packaging/**
+    - pyhelpers/**
+    - qt*/**
+    - skin_generator/**
+    - track_generator/**
+    - xcode/**
 
 jobs:
   android-check:
-    name: Android Check
+    name: Build Android Debug
     runs-on: ubuntu-latest
     steps:
       - name: Set up JDK 1.8
@@ -20,15 +37,27 @@ jobs:
         run: |
           git submodule update --init --recursive --jobs=10
 
+      - name: Cache ccache artifacts
+        uses: actions/cache@v2
+        with:
+          path: ~/.ccache
+          key: ccache
+
       - name: Configure in Open Source mode
         shell: bash
         run: |
+          export CC="$(which ccache) $(which gcc)"
+          export CXX="$(which ccache) $(which g++)"
           ./configure.sh
 
       - name: Set up SDK
         shell: bash
         run: |
           (cd tools/android; ./set_up_android.py --sdk $ANDROID_SDK_ROOT)
+
+      - name: Free Space
+        shell: bash
+        run: df -h
 
       - name: Compile
         shell: bash
