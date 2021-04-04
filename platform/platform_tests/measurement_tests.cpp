@@ -132,7 +132,13 @@ UNIT_TEST(FormatSpeedUnits)
 UNIT_TEST(OSMDistanceToMetersString)
 {
   TEST_EQUAL(OSMDistanceToMetersString(""), "", ());
-  TEST_EQUAL(OSMDistanceToMetersString("INF"), "", ());
+
+  double meters;
+  bool const res = OSMDistanceToMeters("INF", meters);
+  TEST(!res, (meters));
+  if (res)
+    TEST(!std::isfinite(meters), ());
+
   TEST_EQUAL(OSMDistanceToMetersString("NAN"), "", ());
   TEST_EQUAL(OSMDistanceToMetersString("not a number"), "", ());
   TEST_EQUAL(OSMDistanceToMetersString("10й"), "10", ());

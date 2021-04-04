@@ -178,7 +178,11 @@ UNIT_TEST(to_double)
   s = "123.456 we don't parse it.";
   TEST(!strings::to_double(s, d), ());
 
-  TEST(!strings::to_double("INF", d), ());
+  bool const res = strings::to_double("INF", d);
+  TEST(!res, (d));
+  if (res)
+    TEST(!std::isfinite(d), ());
+
   TEST(!strings::to_double("NAN", d), ());
   TEST(!strings::to_double("1.18973e+4932", d), ());
 }
@@ -218,7 +222,11 @@ UNIT_TEST(to_float)
   s = "123.456 we don't parse it.";
   TEST(!strings::to_float(s, f), ());
 
-  TEST(!strings::to_float("INF", f), ());
+  bool const res = strings::to_float("INF", f);
+  TEST(!res, (f));
+  if (res)
+    TEST(!std::isfinite(f), ());
+
   TEST(!strings::to_float("NAN", f), ());
   TEST(!strings::to_float("1.18973e+4932", f), ());
 }
