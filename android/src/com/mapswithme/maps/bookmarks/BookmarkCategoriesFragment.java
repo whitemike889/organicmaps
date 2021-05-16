@@ -1,8 +1,12 @@
 package com.mapswithme.maps.bookmarks;
 
 import android.app.Activity;
+import android.app.ProgressDialog;
+import android.content.Context;
 import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
+import android.provider.DocumentsContract;
 import android.view.MenuItem;
 import android.view.View;
 
@@ -22,10 +26,12 @@ import com.mapswithme.maps.base.DataChangedListener;
 import com.mapswithme.maps.bookmarks.data.BookmarkCategory;
 import com.mapswithme.maps.bookmarks.data.BookmarkManager;
 import com.mapswithme.maps.bookmarks.data.BookmarkSharingResult;
+import com.mapswithme.maps.dialog.DialogUtils;
 import com.mapswithme.maps.dialog.EditTextDialogFragment;
 import com.mapswithme.maps.widget.PlaceholderView;
 import com.mapswithme.maps.widget.recycler.ItemDecoratorFactory;
 import com.mapswithme.util.BottomSheetHelper;
+import com.mapswithme.util.concurrency.UiThread;
 
 import java.util.List;
 
@@ -39,6 +45,7 @@ public class BookmarkCategoriesFragment extends BaseMwmRecyclerFragment<Bookmark
 
 {
   static final int REQ_CODE_DELETE_CATEGORY = 102;
+  static final int REQ_CODE_IMPORT_DIRECTORY = 103;
 
   private static final int MAX_CATEGORY_NAME_LENGTH = 60;
 
@@ -213,6 +220,17 @@ public class BookmarkCategoriesFragment extends BaseMwmRecyclerFragment<Bookmark
         MAX_CATEGORY_NAME_LENGTH, this);
   }
 
+  @Override
+  public void onImportButtonClick()
+  {
+    Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+    // Sic: EXTRA_INITIAL_URI doesn't work
+    // https://stackoverflow.com/questions/65326605/extra-initial-uri-will-not-work-no-matter-what-i-do
+    // intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI, initial);
+    intent.putExtra(DocumentsContract.EXTRA_EXCLUDE_SELF, true);
+    startActivityForResult(intent, REQ_CODE_IMPORT_DIRECTORY);
+  }
+
   @NonNull
   @Override
   public EditTextDialogFragment.OnTextSaveListener getSaveTextListener()
@@ -255,10 +273,36 @@ public class BookmarkCategoriesFragment extends BaseMwmRecyclerFragment<Bookmark
   public final void onActivityResult(int requestCode, int resultCode, Intent data)
   {
     super.onActivityResult(requestCode, resultCode, data);
-    if (resultCode == Activity.RESULT_OK && requestCode == REQ_CODE_DELETE_CATEGORY)
+    switch (requestCode)
     {
+    case REQ_CODE_DELETE_CATEGORY:
+    {
+      if (resultCode != Activity.RESULT_OK)
+        return;
       onDeleteActionSelected(getSelectedCategory());
       return;
+    }
+    case REQ_CODE_IMPORT_DIRECTORY:
+    {
+      if (resultCode != Activity.RESULT_OK || data == null)
+        return;
+
+      final Context context = getActivity();
+      final Uri uri = data.getData();
+      final ProgressDialog dialog = DialogUtils.createModalProgressDialog(context, R.string.wait_several_minutes);
+      dialog.show();
+      // The import code blocks UI thread. Unfortunately, there is no other
+      // option, because native BookmarkManager is only accessible from UI.
+      // Run this task a little bit later after showing ProgressDialog.
+      UiThread.runLater(() -> {
+        BookmarkManager.INSTANCE.importDirectory(context, uri);
+        if (dialog.isShowing())
+          dialog.dismiss();
+      }, 1);
+      break;
+    }
+    default:
+      throw new AssertionError("Invalid requestCode: " + requestCode);
     }
   }
 

@@ -1,10 +1,13 @@
 package com.mapswithme.util;
 
 import android.app.Application;
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.database.Cursor;
 import android.net.Uri;
 import android.os.Environment;
+import android.provider.DocumentsContract;
 import android.text.TextUtils;
 import android.util.Log;
 
@@ -18,7 +21,6 @@ import com.mapswithme.util.log.LoggerFactory;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.FilenameFilter;
 import java.io.IOException;
@@ -26,6 +28,9 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
+import java.util.Queue;
+import java.util.concurrent.LinkedBlockingQueue;
+
 
 public class StorageUtils
 {
@@ -329,5 +334,64 @@ public class StorageUtils
       e.printStackTrace();
       return false;
     }
+  }
+
+  @FunctionalInterface
+  public interface UriFilter {
+    /**
+     * Tests if a specified uri should be included in a file list.
+     *
+     * @param   uri   the name of the file.
+     * @return  <code>true</code> if and only if the name should be
+     * included in the file list; <code>false</code> otherwise.
+     */
+    boolean accept(Uri uri);
+  }
+
+  /**
+   * Recursive lists all files in the given URI.
+   * @param contentResolver contentResolver instance
+   * @param rootUri root URI to scan
+   */
+  public static ArrayList<Uri> listContentProviderFilesRecursively(ContentResolver contentResolver, Uri rootUri, UriFilter filter)
+  {
+    ArrayList<Uri> result = new ArrayList<>();
+
+    Uri rootDir = DocumentsContract.buildChildDocumentsUriUsingTree(rootUri, DocumentsContract.getTreeDocumentId(rootUri));
+    Queue<Uri> directories = new LinkedBlockingQueue<>();
+    directories.add(rootDir);
+    while (!directories.isEmpty())
+    {
+      Uri dir = directories.remove();
+
+      try (Cursor cur = contentResolver.query(dir, new String[]{
+          DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+          DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+          DocumentsContract.Document.COLUMN_MIME_TYPE
+      }, null, null, null))
+      {
+        while (cur.moveToNext())
+        {
+          final String docId = cur.getString(0);
+          final String name = cur.getString(1);
+          final String mime = cur.getString(2);
+          LOGGER.d(TAG, "docId: " + docId + ", name: " + name + ", mime: " + mime);
+
+          if (mime.equals(DocumentsContract.Document.MIME_TYPE_DIR))
+          {
+            final Uri uri = DocumentsContract.buildChildDocumentsUriUsingTree(rootUri, docId);
+            directories.add(uri);
+            continue;
+          }
+          else
+          {
+            final Uri uri = DocumentsContract.buildDocumentUriUsingTree(rootUri, docId);
+            if (filter.accept(uri))
+              result.add(uri);
+          }
+        }
+      }
+    }
+    return result;
   }
 }

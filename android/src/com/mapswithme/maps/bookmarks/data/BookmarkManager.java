@@ -1,17 +1,27 @@
 package com.mapswithme.maps.bookmarks.data;
 
+import android.content.ContentResolver;
+import android.content.Context;
+import android.net.Uri;
+
 import androidx.annotation.IntDef;
 import androidx.annotation.IntRange;
 import androidx.annotation.MainThread;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.mapswithme.maps.Framework;
+import com.mapswithme.maps.MwmApplication;
 import com.mapswithme.maps.base.DataChangedListener;
 import com.mapswithme.maps.base.Observable;
 import com.mapswithme.util.KeyValue;
+import com.mapswithme.util.StorageUtils;
 import com.mapswithme.util.UTM;
+import com.mapswithme.util.log.Logger;
+import com.mapswithme.util.log.LoggerFactory;
 
 import java.io.File;
+import java.io.IOException;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.util.ArrayList;
@@ -62,6 +72,18 @@ public enum BookmarkManager
   public static final int CATEGORY = 0;
 
   public static final List<Icon> ICONS = new ArrayList<>();
+
+  private static final String[] BOOKMARKS_EXTS = Framework.nativeGetBookmarksFilesExts();
+  static final StorageUtils.UriFilter BOOKMARKS_EXTS_FILTER = uri -> {
+    final String segment = uri.getLastPathSegment();
+    for (String ext : BOOKMARKS_EXTS)
+      if (segment.endsWith(ext))
+        return true;
+    return false;
+  };
+
+  private static final Logger LOGGER = LoggerFactory.INSTANCE.getLogger(LoggerFactory.Type.MISC);
+  private static final String TAG = BookmarkManager.class.getSimpleName();
 
   @NonNull
   private final BookmarkCategoriesDataProvider mCategoriesCoreDataProvider
@@ -395,6 +417,46 @@ public enum BookmarkManager
   public void loadKmzFile(@NonNull String path, boolean isTemporaryFile)
   {
     nativeLoadKmzFile(path, isTemporaryFile);
+  }
+
+  public void importDirectory(@NonNull Context context, @NonNull Uri rootUri)
+  {
+    LOGGER.d(TAG, "Importing bookmarks from " + rootUri);
+
+    final ContentResolver contentResolver = context.getContentResolver();
+    ArrayList<Uri> uris = StorageUtils.listContentProviderFilesRecursively(
+        contentResolver, rootUri, BOOKMARKS_EXTS_FILTER);
+
+    MwmApplication app = MwmApplication.from(context);
+    File tempDir = new File(StorageUtils.getTempPath(app));
+
+    for (Uri uri : uris)
+    {
+      LOGGER.w(TAG, "Importing bookmarks file " + uri);
+
+      String fragment = uri.getLastPathSegment();
+      int extPos = fragment.lastIndexOf(".");
+      if (extPos == -1)
+        throw new AssertionError("The file extension is missing in " + uri);
+      String ext = fragment.substring(extPos);
+      boolean check = false;
+      for (String ext2: BOOKMARKS_EXTS)
+        check = check || ext.equals(ext2);
+      if (!check)
+        throw new AssertionError("The file extension is not supported in " + uri);
+
+      try
+      {
+        File tempFile = File.createTempFile("bookmarks", ext, tempDir);
+        StorageUtils.copyFile(context, uri, tempFile);
+        // TODO: ensure that native code actually removes the file
+        loadKmzFile(tempFile.getAbsolutePath(), true);
+      }
+      catch (IOException e)
+      {
+        LOGGER.e(TAG, "Failed to read bookmarks file " + uri);
+      }
+    }
   }
 
   public boolean isAsyncBookmarksLoadingInProgress()
