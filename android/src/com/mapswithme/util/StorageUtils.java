@@ -381,7 +381,6 @@ public class StorageUtils
           {
             final Uri uri = DocumentsContract.buildChildDocumentsUriUsingTree(rootUri, docId);
             directories.add(uri);
-            continue;
           }
           else
           {

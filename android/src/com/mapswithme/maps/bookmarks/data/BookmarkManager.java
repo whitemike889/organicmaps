@@ -73,15 +73,6 @@ public enum BookmarkManager
 
   public static final List<Icon> ICONS = new ArrayList<>();
 
-  private static final String[] BOOKMARKS_EXTS = Framework.nativeGetBookmarksFilesExts();
-  static final StorageUtils.UriFilter BOOKMARKS_EXTS_FILTER = uri -> {
-    final String segment = uri.getLastPathSegment();
-    for (String ext : BOOKMARKS_EXTS)
-      if (segment.endsWith(ext))
-        return true;
-    return false;
-  };
-
   private static final Logger LOGGER = LoggerFactory.INSTANCE.getLogger(LoggerFactory.Type.MISC);
   private static final String TAG = BookmarkManager.class.getSimpleName();
 
@@ -414,43 +405,79 @@ public enum BookmarkManager
   @Icon.PredefinedColor
   public int getLastEditedColor() { return nativeGetLastEditedColor(); }
 
-  public void loadKmzFile(@NonNull String path, boolean isTemporaryFile)
+  public void loadBookmarksFile(@NonNull String path, boolean isTemporaryFile)
   {
-    nativeLoadKmzFile(path, isTemporaryFile);
+    LOGGER.d(TAG, "Loading bookmarks file from: " + path);
+    nativeLoadBookmarksFile(path, isTemporaryFile);
+  }
+
+  private static @Nullable
+  String getBookmarksExtensionFromUri(@NonNull ContentResolver resolver, @NonNull Uri uri)
+  {
+    // Try mime type first.
+    final String mime = resolver.getType(uri);
+    final int i = mime.lastIndexOf('.');
+    if (i != -1)
+    {
+      final String type = mime.substring(i + 1);
+      if (type.equalsIgnoreCase("kmz"))
+        return ".kmz";
+      else if (type.equalsIgnoreCase("kml+xml"))
+        return ".kml";
+    }
+
+    // Fall back to uri parsing.
+    String fragment = uri.getLastPathSegment();
+    if (fragment == null)
+      return null;
+    int extPos = fragment.lastIndexOf(".");
+    if (extPos == -1)
+      return null;
+
+    return fragment.substring(extPos);
+  }
+
+  public static @NonNull
+  File downloadBookmarksFile(@NonNull Context context, @NonNull Uri uri) throws IOException
+  {
+    LOGGER.w(TAG, "Downloading bookmarks file " + uri);
+
+    final ContentResolver resolver = context.getContentResolver();
+    final String ext = getBookmarksExtensionFromUri(resolver, uri);
+    if (ext == null)
+      throw new IOException("The file extension is missing in " + uri);
+
+    MwmApplication app = MwmApplication.from(context);
+    File tempDir = new File(StorageUtils.getTempPath(app));
+    File tempFile = File.createTempFile("bookmarks", ext, tempDir);
+    StorageUtils.copyFile(context, uri, tempFile);
+    return tempFile;
   }
 
   public void importDirectory(@NonNull Context context, @NonNull Uri rootUri)
   {
+    final String[] bookmarksExtensions = Framework.nativeGetBookmarksFilesExts();
+
     LOGGER.d(TAG, "Importing bookmarks from " + rootUri);
-
     final ContentResolver contentResolver = context.getContentResolver();
-    ArrayList<Uri> uris = StorageUtils.listContentProviderFilesRecursively(
-        contentResolver, rootUri, BOOKMARKS_EXTS_FILTER);
 
-    MwmApplication app = MwmApplication.from(context);
-    File tempDir = new File(StorageUtils.getTempPath(app));
+    ArrayList<Uri> uris = StorageUtils.listContentProviderFilesRecursively(
+        contentResolver, rootUri, uri -> {
+          final String ext = getBookmarksExtensionFromUri(contentResolver, uri);
+          if (ext == null)
+            return false;
+          for (String ext2 : bookmarksExtensions)
+            if (ext.equals(ext2))
+              return true;
+          return false;
+        });
 
     for (Uri uri : uris)
     {
-      LOGGER.w(TAG, "Importing bookmarks file " + uri);
-
-      String fragment = uri.getLastPathSegment();
-      int extPos = fragment.lastIndexOf(".");
-      if (extPos == -1)
-        throw new AssertionError("The file extension is missing in " + uri);
-      String ext = fragment.substring(extPos);
-      boolean check = false;
-      for (String ext2: BOOKMARKS_EXTS)
-        check = check || ext.equals(ext2);
-      if (!check)
-        throw new AssertionError("The file extension is not supported in " + uri);
-
       try
       {
-        File tempFile = File.createTempFile("bookmarks", ext, tempDir);
-        StorageUtils.copyFile(context, uri, tempFile);
-        // TODO: ensure that native code actually removes the file
-        loadKmzFile(tempFile.getAbsolutePath(), true);
+        File tempFile = downloadBookmarksFile(context, uri);
+        loadBookmarksFile(tempFile.getAbsolutePath(), true);
       }
       catch (IOException e)
       {
@@ -768,7 +795,7 @@ public enum BookmarkManager
   @Icon.PredefinedColor
   private native int nativeGetLastEditedColor();
 
-  private static native void nativeLoadKmzFile(@NonNull String path, boolean isTemporaryFile);
+  private static native void nativeLoadBookmarksFile(@NonNull String path, boolean isTemporaryFile);
 
   private static native boolean nativeIsAsyncBookmarksLoadingInProgress();
 

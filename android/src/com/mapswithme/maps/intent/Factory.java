@@ -40,6 +40,7 @@ import com.mapswithme.util.log.LoggerFactory;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.List;
@@ -436,87 +437,39 @@ public class Factory
     public MapTask process(@NonNull Intent intent)
     {
       ThreadPool.getStorage().execute(() -> {
-        readKmzFromIntent();
+        readBookmarksFileFromIntent();
         mActivity.runOnUiThread(mActivity::showMap);
       });
       return null;
     }
 
-    private void readKmzFromIntent()
+    private void readBookmarksFileFromIntent()
     {
-      String path = null;
-      boolean isTemporaryFile = false;
       final String scheme = mData.getScheme();
       if (scheme != null && !scheme.equalsIgnoreCase(ContentResolver.SCHEME_FILE))
       {
-        // scheme is "content" or "http" - need to download or read file first
-        InputStream input = null;
-        OutputStream output = null;
-
         try
         {
-          final ContentResolver resolver = mActivity.getContentResolver();
-          final String ext = getExtensionFromMime(resolver.getType(mData));
-          if (ext != null)
-          {
-            final String filePath = StorageUtils.getTempPath(mActivity.getApplication())
-                                    + "Attachment" + ext;
-
-            File tmpFile = new File(filePath);
-            output = new FileOutputStream(tmpFile);
-            input = resolver.openInputStream(mData);
-
-            final byte[] buffer = new byte[Constants.MB / 2];
-            int read;
-            while ((read = input.read(buffer)) != -1)
-              output.write(buffer, 0, read);
-            output.flush();
-
-            path = filePath;
-            isTemporaryFile = true;
-          }
-        } catch (final Exception ex)
+          final String path = BookmarkManager.downloadBookmarksFile(mActivity, mData).getAbsolutePath();
+          mActivity.runOnUiThread(() -> BookmarkManager.INSTANCE.loadBookmarksFile(path, true));
+        }
+        catch (IOException e)
         {
-          LOGGER.w(TAG, "Attachment not found or io error: " + ex, ex);
-        } finally
-        {
-          Utils.closeSafely(input);
-          Utils.closeSafely(output);
+          LOGGER.w(TAG, "Can't download bookmarks file from URI: " + mData, e);
         }
       }
       else
-        path = mData.getPath();
-
-      if (!TextUtils.isEmpty(path))
       {
-        LOGGER.d(TAG, "Loading bookmarks file from: " + path);
-        loadKmzFile(path, isTemporaryFile);
+        final String path = mData.getPath();
+        if (path != null)
+        {
+          mActivity.runOnUiThread(() -> BookmarkManager.INSTANCE.loadBookmarksFile(path, false));
+        }
+        else
+        {
+          LOGGER.w(TAG, "Missing path in bookmarks URI: " + mData);
+        }
       }
-      else
-      {
-        LOGGER.w(TAG, "Can't get bookmarks file from URI: " + mData);
-
-      }
-    }
-
-    private void loadKmzFile(final @NonNull String path, final boolean isTemporaryFile)
-    {
-      mActivity.runOnUiThread(() -> BookmarkManager.INSTANCE.loadKmzFile(path, isTemporaryFile));
-    }
-
-    private String getExtensionFromMime(String mime)
-    {
-      final int i = mime.lastIndexOf('.');
-      if (i == -1)
-        return null;
-
-      mime = mime.substring(i + 1);
-      if (mime.equalsIgnoreCase("kmz"))
-        return ".kmz";
-      else if (mime.equalsIgnoreCase("kml+xml"))
-        return ".kml";
-      else
-        return null;
     }
   }
 

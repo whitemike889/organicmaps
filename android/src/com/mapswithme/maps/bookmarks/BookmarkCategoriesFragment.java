@@ -273,18 +273,18 @@ public class BookmarkCategoriesFragment extends BaseMwmRecyclerFragment<Bookmark
   public final void onActivityResult(int requestCode, int resultCode, Intent data)
   {
     super.onActivityResult(requestCode, resultCode, data);
+    if (resultCode != Activity.RESULT_OK)
+      return;
     switch (requestCode)
     {
     case REQ_CODE_DELETE_CATEGORY:
     {
-      if (resultCode != Activity.RESULT_OK)
-        return;
       onDeleteActionSelected(getSelectedCategory());
       return;
     }
     case REQ_CODE_IMPORT_DIRECTORY:
     {
-      if (resultCode != Activity.RESULT_OK || data == null)
+      if (data == null)
         return;
 
       final Context context = getActivity();
