@@ -1,22 +1,24 @@
 package com.mapswithme.maps.bookmarks.data;
 
 import android.content.ContentResolver;
-import android.content.Context;
+import android.database.Cursor;
 import android.net.Uri;
+import android.provider.OpenableColumns;
 
 import androidx.annotation.IntDef;
 import androidx.annotation.IntRange;
 import androidx.annotation.MainThread;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.WorkerThread;
 
 import com.mapswithme.maps.Framework;
-import com.mapswithme.maps.MwmApplication;
 import com.mapswithme.maps.base.DataChangedListener;
 import com.mapswithme.maps.base.Observable;
 import com.mapswithme.util.KeyValue;
 import com.mapswithme.util.StorageUtils;
 import com.mapswithme.util.UTM;
+import com.mapswithme.util.concurrency.UiThread;
 import com.mapswithme.util.log.Logger;
 import com.mapswithme.util.log.LoggerFactory;
 
@@ -72,6 +74,8 @@ public enum BookmarkManager
   public static final int CATEGORY = 0;
 
   public static final List<Icon> ICONS = new ArrayList<>();
+
+  static String[] BOOKMARKS_EXTENSIONS = Framework.nativeGetBookmarksFilesExts();
 
   private static final Logger LOGGER = LoggerFactory.INSTANCE.getLogger(LoggerFactory.Type.MISC);
   private static final String TAG = BookmarkManager.class.getSimpleName();
@@ -405,85 +409,86 @@ public enum BookmarkManager
   @Icon.PredefinedColor
   public int getLastEditedColor() { return nativeGetLastEditedColor(); }
 
+  @MainThread
   public void loadBookmarksFile(@NonNull String path, boolean isTemporaryFile)
   {
     LOGGER.d(TAG, "Loading bookmarks file from: " + path);
     nativeLoadBookmarksFile(path, isTemporaryFile);
   }
 
-  private static @Nullable
-  String getBookmarksExtensionFromUri(@NonNull ContentResolver resolver, @NonNull Uri uri)
+  static @Nullable String getBookmarksFilenameFromUri(@NonNull ContentResolver resolver, @NonNull Uri uri)
   {
-    // Try mime type first.
+    String filename = null;
+    String scheme = uri.getScheme();
+    if (scheme.equals("content"))
+    {
+      try (Cursor cursor = resolver.query(uri, null, null, null, null))
+      {
+        if (cursor != null && cursor.moveToFirst())
+        {
+          filename = cursor.getString(cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME));
+        }
+      }
+    }
+
+    if (filename == null)
+    {
+      filename = uri.getPath();
+      int cut = filename.lastIndexOf('/');
+      if (cut != -1)
+      {
+        filename = filename.substring(cut + 1);
+      }
+    }
+    // See IsBadCharForPath()
+    filename = filename.replaceAll("[:/\\\\<>\"|?*]", "");
+
+    // Check that filename contains bookmarks extension.
+    for (String ext: BOOKMARKS_EXTENSIONS)
+    {
+      if (filename.endsWith(ext))
+        return filename;
+    }
+
+    // Try get guess extension from the mime type.
     final String mime = resolver.getType(uri);
     final int i = mime.lastIndexOf('.');
     if (i != -1)
     {
       final String type = mime.substring(i + 1);
       if (type.equalsIgnoreCase("kmz"))
-        return ".kmz";
+        return filename + ".kmz";
       else if (type.equalsIgnoreCase("kml+xml"))
-        return ".kml";
+        return filename + ".kml";
     }
 
-    // Fall back to uri parsing.
-    String fragment = uri.getLastPathSegment();
-    if (fragment == null)
-      return null;
-    int extPos = fragment.lastIndexOf(".");
-    if (extPos == -1)
-      return null;
-
-    return fragment.substring(extPos);
+    return null;
   }
 
-  public static @NonNull
-  File downloadBookmarksFile(@NonNull Context context, @NonNull Uri uri) throws IOException
+  @WorkerThread
+  public boolean importBookmarksFile(@NonNull ContentResolver resolver, @NonNull Uri uri, @NonNull File tempDir)
   {
-    LOGGER.w(TAG, "Downloading bookmarks file " + uri);
-
-    final ContentResolver resolver = context.getContentResolver();
-    final String ext = getBookmarksExtensionFromUri(resolver, uri);
-    if (ext == null)
-      throw new IOException("The file extension is missing in " + uri);
-
-    MwmApplication app = MwmApplication.from(context);
-    File tempDir = new File(StorageUtils.getTempPath(app));
-    File tempFile = File.createTempFile("bookmarks", ext, tempDir);
-    StorageUtils.copyFile(context, uri, tempFile);
-    return tempFile;
-  }
-
-  public void importDirectory(@NonNull Context context, @NonNull Uri rootUri)
-  {
-    final String[] bookmarksExtensions = Framework.nativeGetBookmarksFilesExts();
-
-    LOGGER.d(TAG, "Importing bookmarks from " + rootUri);
-    final ContentResolver contentResolver = context.getContentResolver();
-
-    ArrayList<Uri> uris = StorageUtils.listContentProviderFilesRecursively(
-        contentResolver, rootUri, uri -> {
-          final String ext = getBookmarksExtensionFromUri(contentResolver, uri);
-          if (ext == null)
-            return false;
-          for (String ext2 : bookmarksExtensions)
-            if (ext.equals(ext2))
-              return true;
-          return false;
-        });
-
-    for (Uri uri : uris)
+    String filename = getBookmarksFilenameFromUri(resolver, uri);
+    if (filename == null)
     {
-      try
-      {
-        File tempFile = downloadBookmarksFile(context, uri);
-        loadBookmarksFile(tempFile.getAbsolutePath(), true);
-      }
-      catch (IOException e)
-      {
-        LOGGER.e(TAG, "Failed to read bookmarks file " + uri);
-      }
+      LOGGER.w(TAG, "Missing path in bookmarks URI: " + uri);
+      return false;
     }
+
+    LOGGER.w(TAG, "Downloading bookmarks file " + uri);
+    File tempFile = new File(tempDir, filename);
+    try
+    {
+      StorageUtils.copyFile(resolver, uri, tempFile);
+    } catch (IOException e)
+    {
+      LOGGER.w(TAG, "Failed to download bookmarks file from " + uri, e);
+      return false;
+    }
+
+    UiThread.run(() -> loadBookmarksFile(tempFile.getAbsolutePath(), true));
+
+    return true;
   }
 
   public boolean isAsyncBookmarksLoadingInProgress()

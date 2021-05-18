@@ -2,6 +2,7 @@ package com.mapswithme.maps.bookmarks;
 
 import android.app.Activity;
 import android.app.ProgressDialog;
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
@@ -19,6 +20,7 @@ import androidx.annotation.Nullable;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.cocosw.bottomsheet.BottomSheet;
+import com.mapswithme.maps.MwmApplication;
 import com.mapswithme.maps.R;
 import com.mapswithme.maps.adapter.OnItemClickListener;
 import com.mapswithme.maps.base.BaseMwmRecyclerFragment;
@@ -31,8 +33,13 @@ import com.mapswithme.maps.dialog.EditTextDialogFragment;
 import com.mapswithme.maps.widget.PlaceholderView;
 import com.mapswithme.maps.widget.recycler.ItemDecoratorFactory;
 import com.mapswithme.util.BottomSheetHelper;
+import com.mapswithme.util.StorageUtils;
+import com.mapswithme.util.concurrency.ThreadPool;
 import com.mapswithme.util.concurrency.UiThread;
+import com.mapswithme.util.log.Logger;
+import com.mapswithme.util.log.LoggerFactory;
 
+import java.io.File;
 import java.util.List;
 
 public class BookmarkCategoriesFragment extends BaseMwmRecyclerFragment<BookmarkCategoriesAdapter>
@@ -48,6 +55,9 @@ public class BookmarkCategoriesFragment extends BaseMwmRecyclerFragment<Bookmark
   static final int REQ_CODE_IMPORT_DIRECTORY = 103;
 
   private static final int MAX_CATEGORY_NAME_LENGTH = 60;
+
+  private static final Logger LOGGER = LoggerFactory.INSTANCE.getLogger(LoggerFactory.Type.MISC);
+  private static final String TAG = BookmarkCategoriesFragment.class.getSimpleName();
 
   @Nullable
   private BookmarkCategory mSelectedCategory;
@@ -288,17 +298,21 @@ public class BookmarkCategoriesFragment extends BaseMwmRecyclerFragment<Bookmark
         return;
 
       final Context context = getActivity();
-      final Uri uri = data.getData();
+      final Uri rootUri = data.getData();
       final ProgressDialog dialog = DialogUtils.createModalProgressDialog(context, R.string.wait_several_minutes);
       dialog.show();
-      // The import code blocks UI thread. Unfortunately, there is no other
-      // option, because native BookmarkManager is only accessible from UI.
-      // Run this task a little bit later after showing ProgressDialog.
-      UiThread.runLater(() -> {
-        BookmarkManager.INSTANCE.importDirectory(context, uri);
-        if (dialog.isShowing())
-          dialog.dismiss();
-      }, 1);
+      LOGGER.d(TAG, "Importing bookmarks from " + rootUri);
+      MwmApplication app = MwmApplication.from(context);
+      final File tempDir = new File(StorageUtils.getTempPath(app));
+      final ContentResolver resolver = context.getContentResolver();
+      ThreadPool.getStorage().execute(() -> {
+        StorageUtils.listContentProviderFilesRecursively(
+            resolver, rootUri, uri -> BookmarkManager.INSTANCE.importBookmarksFile(resolver, uri, tempDir));
+        UiThread.run(() -> {
+          if (dialog.isShowing())
+            dialog.dismiss();
+        });
+      });
       break;
     }
     default:

@@ -16,6 +16,7 @@ import com.mapswithme.maps.DownloadResourcesLegacyActivity;
 import com.mapswithme.maps.Framework;
 import com.mapswithme.maps.MapFragment;
 import com.mapswithme.maps.MwmActivity;
+import com.mapswithme.maps.MwmApplication;
 import com.mapswithme.maps.api.Const;
 import com.mapswithme.maps.api.ParsedMwmRequest;
 import com.mapswithme.maps.api.ParsedRoutingData;
@@ -28,7 +29,6 @@ import com.mapswithme.maps.bookmarks.data.MapObject;
 import com.mapswithme.maps.routing.RoutingController;
 import com.mapswithme.maps.search.SearchActivity;
 import com.mapswithme.maps.search.SearchEngine;
-import com.mapswithme.util.Constants;
 import com.mapswithme.util.CrashlyticsUtils;
 import com.mapswithme.util.KeyValue;
 import com.mapswithme.util.StorageUtils;
@@ -39,10 +39,7 @@ import com.mapswithme.util.log.Logger;
 import com.mapswithme.util.log.LoggerFactory;
 
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.util.List;
 import java.util.Locale;
 
@@ -436,40 +433,14 @@ public class Factory
     @Override
     public MapTask process(@NonNull Intent intent)
     {
+      MwmApplication app = MwmApplication.from(mActivity);
+      final File tempDir = new File(StorageUtils.getTempPath(app));
+      final ContentResolver resolver = mActivity.getContentResolver();
       ThreadPool.getStorage().execute(() -> {
-        readBookmarksFileFromIntent();
+        BookmarkManager.INSTANCE.importBookmarksFile(resolver, mData, tempDir);
         mActivity.runOnUiThread(mActivity::showMap);
       });
       return null;
-    }
-
-    private void readBookmarksFileFromIntent()
-    {
-      final String scheme = mData.getScheme();
-      if (scheme != null && !scheme.equalsIgnoreCase(ContentResolver.SCHEME_FILE))
-      {
-        try
-        {
-          final String path = BookmarkManager.downloadBookmarksFile(mActivity, mData).getAbsolutePath();
-          mActivity.runOnUiThread(() -> BookmarkManager.INSTANCE.loadBookmarksFile(path, true));
-        }
-        catch (IOException e)
-        {
-          LOGGER.w(TAG, "Can't download bookmarks file from URI: " + mData, e);
-        }
-      }
-      else
-      {
-        final String path = mData.getPath();
-        if (path != null)
-        {
-          mActivity.runOnUiThread(() -> BookmarkManager.INSTANCE.loadBookmarksFile(path, false));
-        }
-        else
-        {
-          LOGGER.w(TAG, "Missing path in bookmarks URI: " + mData);
-        }
-      }
     }
   }
 

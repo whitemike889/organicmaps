@@ -179,15 +179,15 @@ public class StorageUtils
 
   /**
    * Copy data from a URI into a local file.
-   * @param context context
+   * @param resolve content resolver
    * @param from a source URI.
    * @param to a destination file
    * @return true on success and false if the provider recently crashed.
    * @throws IOException - if I/O error occurs.
    */
-  public static boolean copyFile(@NonNull Context context, @NonNull Uri from, @NonNull File to) throws IOException
+  public static boolean copyFile(@NonNull ContentResolver resolver, @NonNull Uri from, @NonNull File to) throws IOException
   {
-    try (InputStream in = context.getContentResolver().openInputStream(from))
+    try (InputStream in = resolver.openInputStream(from))
     {
       if (in == null)
         return false;
@@ -337,15 +337,9 @@ public class StorageUtils
   }
 
   @FunctionalInterface
-  public interface UriFilter {
-    /**
-     * Tests if a specified uri should be included in a file list.
-     *
-     * @param   uri   the name of the file.
-     * @return  <code>true</code> if and only if the name should be
-     * included in the file list; <code>false</code> otherwise.
-     */
-    boolean accept(Uri uri);
+  public interface UriVisitor
+  {
+    void visit(Uri uri);
   }
 
   /**
@@ -353,7 +347,7 @@ public class StorageUtils
    * @param contentResolver contentResolver instance
    * @param rootUri root URI to scan
    */
-  public static ArrayList<Uri> listContentProviderFilesRecursively(ContentResolver contentResolver, Uri rootUri, UriFilter filter)
+  public static void listContentProviderFilesRecursively(ContentResolver contentResolver, Uri rootUri, UriVisitor filter)
   {
     ArrayList<Uri> result = new ArrayList<>();
 
@@ -385,12 +379,10 @@ public class StorageUtils
           else
           {
             final Uri uri = DocumentsContract.buildDocumentUriUsingTree(rootUri, docId);
-            if (filter.accept(uri))
-              result.add(uri);
+            filter.visit(uri);
           }
         }
       }
     }
-    return result;
   }
 }
