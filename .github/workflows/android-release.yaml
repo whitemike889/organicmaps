@@ -16,8 +16,6 @@ jobs:
             bundle: true
           - flavor: huawei
             bundle: true
-          - flavor: samsung
-          - flavor: amazon
           - flavor: web
     steps:
       - name: Install build tools and dependencies
@@ -56,11 +54,11 @@ jobs:
         shell: bash
         run: (cd tools/android; ./set_up_android.py --sdk $ANDROID_SDK_ROOT)
 
-      - name: Compile
-        shell: bash
-        working-directory: android
-        run: |
-          ./gradlew bundle${{ matrix.flavor }}release assemble${{ matrix.flavor }}release
+      - name: Release
+        uses: maierj/fastlane-action@v2.0.1
+        with:
+          lane: 'android ${{ matrix.flavor }}'
+          subdirectory: 'android'
 
       - name: Upload AAB to Artifacts
         uses: actions/upload-artifact@v2
@@ -77,3 +75,4 @@ jobs:
           name: ${{ matrix.flavor }}-release-apk
           path: ./android/build/outputs/apk/${{ matrix.flavor }}/release/OrganicMaps-*-${{ matrix.flavor }}-release.apk
           if-no-files-found: error
+

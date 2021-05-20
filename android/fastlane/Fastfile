@@ -1,0 +1,94 @@
+default_platform(:android)
+
+platform :android do
+  desc "Release a new version on GitHub"
+  lane :web do
+    gradle(
+      task: 'assemble',
+      flavor: 'Web',
+      build_type: 'Release',
+      print_command: 'true',
+      print_command_output: 'true',
+      properties: {
+        "arm64" => "true",
+        "arm32" => "true",
+      }
+    )
+    # TODO: upload to GitHub Release
+  end
+
+  desc "Release a version on Google Play"
+  lane :google do
+    gradle(
+      task: 'bundle',
+      flavor: 'Google',
+      build_type: 'Release',
+      print_command: 'true',
+      print_command_output: 'true',
+      properties: {
+        "arm64" => "true",
+        "arm32" => "true",
+      }
+    )
+    upload_to_play_store(
+      track: "alpha", # = Closed Testing
+      package_name: "app.organicmaps",
+      skip_upload_apk: true,
+      json_key: "google-play.json",
+      release_status: "draft",
+      skip_upload_metadata: true,
+      skip_upload_screenshots: true,
+      skip_upload_images: true,
+    )
+  end
+
+  desc "Release a new version on Huawei AppGallery"
+  lane :huawei do
+    gradle(
+      task: 'bundle',
+      flavor: 'Huawei',
+      build_type: 'Release',
+      print_command: 'true',
+      print_command_output: 'true',
+      properties: {
+        "arm64" => "true",
+        "arm32" => "true",
+      }
+    )
+    # TODO: fix 403
+    #huawei_appgallery_connect(
+    #  #client_id: "",
+    #  #client_secret: "",
+    #  app_id: "app.orgaxxnicmaps",
+    #  apk_path: lane_context[SharedValues::GRADLE_AAB_OUTPUT_PATH],
+    #  is_aab: true,
+    #  submit_for_review: false,
+    #)
+  end
+
+  desc "Release a new version on Firebase App Distribution"
+  lane :firebase do
+    gradle(
+      # TODO: link Firebase with GPlay to support AAB
+      #task: 'bundle',
+      task: 'assemble',
+      flavor: 'Firebase',
+      build_type: 'Beta', # use Beta for Firebase
+      print_command: 'true',
+      print_command_output: 'true',
+      properties: {
+        "arm64" => "true",
+        "arm32" => "true",
+      }
+    )
+
+    firebase_app_distribution(
+      app: "1:939321867014:android:53dd8fc07958ab93587c87",
+      groups: "android-qa",
+      release_notes: "A new beta version is available!",
+      #android_artifact_type: "AAB",
+      android_artifact_type: "APK",
+      service_credentials_file:  "firebase-app-distribution.json"
+    )
+  end
+end

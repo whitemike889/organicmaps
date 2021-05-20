@@ -13,15 +13,15 @@ buildscript {
   // Detect flavors from the task name.
   def taskName = getGradle().getStartParameter().getTaskRequests().toString().toLowerCase();
   def isFdroid = taskName.contains("fdroid");
-  def isBeta = taskName.contains("beta");
+  def isFirebase = taskName.contains("firebase");
 
   // Enable Google Mobile Services for all flavors except fdroid.
   def googleMobileServicesDefault = !isFdroid;
   // Add a parameter to force GMS.
   ext.googleMobileServicesEnabled = project.hasProperty('gms') ?: googleMobileServicesDefault;
 
-  // Enable Firebase for all beta flavors except fdroid only if google-services.json exists.
-  def googleFirebaseServicesDefault = isBeta && !isFdroid && file('google-services.json').exists();
+  // Enable Firebase for all Beta if google-services.json exists.
+  def googleFirebaseServicesDefault = isFirebase && file('google-services.json').exists();
   // Add a parameter to force Firebase.
   ext.googleFirebaseServicesEnabled = project.hasProperty('firebase') ?: googleFirebaseServicesDefault;
 
@@ -38,7 +38,6 @@ buildscript {
     if (googleFirebaseServicesEnabled) {
       println("Building with Google Firebase Services")
       classpath 'com.google.firebase:firebase-crashlytics-gradle:2.6.1'
-      classpath 'com.google.firebase:firebase-appdistribution-gradle:2.1.2'
     } else {
       println("Building without Google Firebase Services")
     }
@@ -58,7 +57,6 @@ if (googleMobileServicesEnabled) {
 }
 if (googleFirebaseServicesEnabled) {
   apply plugin: 'com.google.firebase.crashlytics'
-  apply plugin: 'com.google.firebase.appdistribution'
 }
 
 dependencies {
@@ -72,7 +70,6 @@ dependencies {
 
   // Google Firebase Services
   if (googleFirebaseServicesEnabled) {
-    implementation 'com.google.firebase:firebase-crashlytics:18.0.0'
     implementation 'com.google.firebase:firebase-crashlytics-ndk:18.0.0'
   }
 
@@ -200,8 +197,8 @@ android {
       if (abiFilters.isEmpty()) {
         abiFilters.add('armeabi-v7a')
         abiFilters.add('arm64-v8a')
-        abiFilters.add('x86_64')
-        abiFilters.add('x86')
+        //abiFilters.add('x86_64')
+        //abiFilters.add('x86')
       }
       println('Building for ' + String.join(", ", abiFilters))
     }
@@ -240,6 +237,13 @@ android {
       android.sourceSets.google.assets.srcDirs = ['flavors/world-enabled']
     }
 
+    firebase {
+      dimension "default"
+      versionName = android.defaultConfig.versionName + '-Firebase'
+      buildConfigField 'String', 'SUPPORT_MAIL', '"firebase@organicmaps.app"'
+      android.sourceSets.google.assets.srcDirs = ['flavors/world-enabled']
+    }
+
     samsung {
       dimension "default"
       versionName = android.defaultConfig.versionName + '-Samsung'
@@ -275,6 +279,7 @@ android {
       dimension "default"
       versionName = android.defaultConfig.versionName + '-Huawei'
       versionCode = HUAWEI_VERSION_CODE_BASE + android.defaultConfig.versionCode
+      buildConfigField 'String', 'REVIEW_URL', '"https://appgallery.huawei.com/#/app/C104325611"'
       buildConfigField 'String', 'SUPPORT_MAIL', '"huawei@organicmaps.app"'
       android.sourceSets.huawei.assets.srcDirs = ['flavors/world-enabled']
     }
@@ -348,6 +353,8 @@ android {
 
     beta {
       applicationIdSuffix '.beta'
+      minifyEnabled true
+      shrinkResources true
       versionNameSuffix '-beta'
       signingConfig signingConfigs.release
       matchingFallbacks = ['debug', 'release']
@@ -357,12 +364,6 @@ android {
       if (googleFirebaseServicesEnabled) {
         firebaseCrashlytics {
           nativeSymbolUploadEnabled true
-        }
-        firebaseAppDistribution {
-          releaseNotesFile = "RELEASE"
-          groups = "android-qa"
-          apkPath = "./build/outputs/apk/web/beta/" + appName.replaceAll("\\s","") + "-" + defaultConfig.versionCode + "-web-beta.apk"
-          serviceCredentialsFile = "firebase-app-distribution.json"
         }
       }
     }
